@@ -1,6 +1,6 @@
 import os
-import asyncio
 import logging
+import asyncio
 from flask import Flask, request
 from telegram import (
     Update,
@@ -28,6 +28,8 @@ logger = logging.getLogger(__name__)
 
 HEIGHT, WEIGHT = range(2)
 
+TOKEN = os.getenv("TELEGRAM_BOT_TOKEN")
+
 CONTACT_URL = (
     "https://t.me/Zelenina_Oksana"
     "?text=Хочу%20на%20курс%20%D0%A3%D1%81%D0%B2%D1%96%D0%B4%D0%BE%D0%BC%D0%BB%D0%B5%D0%BD%D0%B5%20%D1%85%D0%B0%D1%80%D1%87%D1%83%D0%B2%D0%B0%D0%BD%D0%BD%D1%8F"
@@ -42,84 +44,33 @@ telegram_app = None
 # =========================
 def main_keyboard() -> ReplyKeyboardMarkup:
     keyboard = [
-        ["▶️ Старт"],
+        ["▶️ Старт", "🔄 Перерахувати ІМТ"],
         ["📘 Детальніше про курс"],
         ["👤 Для кого курс"],
         ["📝 Як записатися"],
-        ["🔄 Перерахувати ІМТ"],
     ]
     return ReplyKeyboardMarkup(
         keyboard,
         resize_keyboard=True,
-        one_time_keyboard=False
+        one_time_keyboard=False,
     )
 
 
 def contact_inline_keyboard() -> InlineKeyboardMarkup:
-    keyboard = [
-        [InlineKeyboardButton("✍️ Написати в особисті повідомлення", url=CONTACT_URL)]
-    ]
-    return InlineKeyboardMarkup(keyboard)
+    return InlineKeyboardMarkup(
+        [
+            [
+                InlineKeyboardButton(
+                    "✍️ Написати в особисті повідомлення",
+                    url=CONTACT_URL,
+                )
+            ]
+        ]
+    )
 
 
 # =========================
-# Допоміжні функції
-# =========================
-def bmi_category(bmi: float) -> str:
-    if bmi < 18.5:
-        return "Недостатня маса тіла"
-    elif bmi < 25:
-        return "Норма"
-    elif bmi < 30:
-        return "Надлишкова вага"
-    return "Ожиріння"
-
-
-def bmi_explanation(bmi: float) -> str:
-    if bmi < 18.5:
-        return (
-            "Твоє тіло може бути в дефіциті ресурсів.\n"
-            "У такій ситуації важливо не просто їсти більше, "
-            "а вибудувати спокійні й зрозумілі відносини з їжею."
-        )
-    elif bmi < 25:
-        return (
-            "У тебе хороша база 👍\n"
-            "Але навіть при нормальному ІМТ можуть бути труднощі:\n"
-            "— переїдання\n"
-            "— тяга до солодкого\n"
-            "— тривога навколо їжі\n"
-            "— коливання ваги"
-        )
-    elif bmi < 30:
-        return (
-            "Тіло вже накопичує зайву вагу, і худнути може бути складніше.\n"
-            "Але тут важливі не жорсткі дієти, а система, яку реально втримати."
-        )
-    else:
-        return (
-            "Є додаткове навантаження на організм.\n"
-            "У такій ситуації особливо важливо діяти м’яко, послідовно і без крайнощів."
-        )
-
-
-def normalize_number(text: str) -> str:
-    return text.strip().replace(",", ".")
-
-
-def is_menu_text(text: str) -> bool:
-    menu_items = {
-        "▶️ Старт",
-        "📘 Детальніше про курс",
-        "👤 Для кого курс",
-        "📝 Як записатися",
-        "🔄 Перерахувати ІМТ",
-    }
-    return text.strip() in menu_items
-
-
-# =========================
-# Текстові блоки
+# Тексти
 # =========================
 COURSE_DETAILS_TEXT = (
     "📘 Курс «Усвідомлене харчування» — це не дієта і не марафон.\n\n"
@@ -154,7 +105,51 @@ SIGNUP_TEXT = (
 
 
 # =========================
-# Команди та меню
+# Допоміжні функції
+# =========================
+def normalize_number(text: str) -> str:
+    return text.strip().replace(",", ".")
+
+
+def bmi_category(bmi: float) -> str:
+    if bmi < 18.5:
+        return "Недостатня маса тіла"
+    if bmi < 25:
+        return "Норма"
+    if bmi < 30:
+        return "Надлишкова вага"
+    return "Ожиріння"
+
+
+def bmi_explanation(bmi: float) -> str:
+    if bmi < 18.5:
+        return (
+            "Твоє тіло може бути в дефіциті ресурсів.\n"
+            "У такій ситуації важливо не просто їсти більше, "
+            "а вибудувати спокійні й зрозумілі відносини з їжею."
+        )
+    if bmi < 25:
+        return (
+            "У тебе хороша база 👍\n"
+            "Але навіть при нормальному ІМТ можуть бути труднощі:\n"
+            "— переїдання\n"
+            "— тяга до солодкого\n"
+            "— тривога навколо їжі\n"
+            "— коливання ваги"
+        )
+    if bmi < 30:
+        return (
+            "Тіло вже накопичує зайву вагу, і худнути може бути складніше.\n"
+            "Але тут важливі не жорсткі дієти, а система, яку реально втримати."
+        )
+    return (
+        "Є додаткове навантаження на організм.\n"
+        "У такій ситуації особливо важливо діяти м’яко, послідовно і без крайнощів."
+    )
+
+
+# =========================
+# Меню
 # =========================
 async def send_course_details(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(
@@ -181,8 +176,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     context.user_data.clear()
     await update.message.reply_text(
         "Привіт 👋\n\n"
-        "Я допоможу розрахувати індекс маси тіла (ІМТ) "
-        "і покажу, куди рухатись далі.\n\n"
+        "Я допоможу розрахувати індекс маси тіла (ІМТ) і покажу, куди рухатись далі.\n\n"
         "Введи свій зріст у сантиметрах.\n"
         "Наприклад: 165",
         reply_markup=main_keyboard(),
@@ -193,23 +187,23 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def cancel(update: Update, context: ContextTypes.DEFAULT_TYPE):
     context.user_data.clear()
     await update.message.reply_text(
-        "Окей, повертаємось у меню 👇",
+        "Добре, почнемо заново, коли будеш готова 👇",
         reply_markup=main_keyboard(),
     )
     return ConversationHandler.END
 
 
 # =========================
-# Обробка меню в будь-якому стані
+# Обробка меню всередині діалогу
 # =========================
-async def handle_menu_in_conversation(
+async def process_menu_buttons(
     update: Update,
     context: ContextTypes.DEFAULT_TYPE,
     current_state: int,
 ):
     text = update.message.text.strip()
 
-    if text == "▶️ Старт" or text == "🔄 Перерахувати ІМТ":
+    if text in ["▶️ Старт", "🔄 Перерахувати ІМТ"]:
         return await start(update, context)
 
     if text == "📘 Детальніше про курс":
@@ -228,17 +222,17 @@ async def handle_menu_in_conversation(
 
 
 # =========================
-# Крок 1: зріст
+# Крок 1 — зріст
 # =========================
 async def get_height(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    text = update.message.text.strip()
-
-    menu_result = await handle_menu_in_conversation(update, context, HEIGHT)
+    menu_result = await process_menu_buttons(update, context, HEIGHT)
     if menu_result is not None:
         return menu_result
 
+    text = normalize_number(update.message.text)
+
     try:
-        height = float(normalize_number(text))
+        height = float(text)
     except ValueError:
         await update.message.reply_text(
             "Будь ласка, введи зріст числом.\n"
@@ -267,17 +261,17 @@ async def get_height(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 
 # =========================
-# Крок 2: вага
+# Крок 2 — вага
 # =========================
 async def get_weight(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    text = update.message.text.strip()
-
-    menu_result = await handle_menu_in_conversation(update, context, WEIGHT)
+    menu_result = await process_menu_buttons(update, context, WEIGHT)
     if menu_result is not None:
         return menu_result
 
+    text = normalize_number(update.message.text)
+
     try:
-        weight = float(normalize_number(text))
+        weight = float(text)
     except ValueError:
         await update.message.reply_text(
             "Будь ласка, введи вагу числом.\n"
@@ -295,15 +289,16 @@ async def get_weight(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return WEIGHT
 
     height_cm = context.user_data.get("height")
-    if not height_cm:
+    if height_cm is None:
         await update.message.reply_text(
-            "Сталася помилка в розрахунку. Натисни «▶️ Старт» і почнемо заново.",
+            "Сталася помилка. Натисни «▶️ Старт» і спробуємо ще раз.",
             reply_markup=main_keyboard(),
         )
         return ConversationHandler.END
 
     height_m = height_cm / 100
     bmi = weight / (height_m ** 2)
+
     category = bmi_category(bmi)
     explanation = bmi_explanation(bmi)
 
@@ -335,7 +330,6 @@ async def get_weight(update: Update, context: ContextTypes.DEFAULT_TYPE):
         result_text,
         reply_markup=main_keyboard(),
     )
-
     await update.message.reply_text(
         "Обери, що тобі цікаво далі 👇",
         reply_markup=main_keyboard(),
@@ -345,14 +339,13 @@ async def get_weight(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 
 # =========================
-# Обробка меню поза діалогом
+# Меню поза діалогом
 # =========================
-async def menu_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    return await start(update, context)
-
-
 async def fallback_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
     text = update.message.text.strip()
+
+    if text in ["▶️ Старт", "🔄 Перерахувати ІМТ"]:
+        return await start(update, context)
 
     if text == "📘 Детальніше про курс":
         await send_course_details(update, context)
@@ -364,10 +357,6 @@ async def fallback_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     if text == "📝 Як записатися":
         await send_signup(update, context)
-        return
-
-    if text == "▶️ Старт" or text == "🔄 Перерахувати ІМТ":
-        await start(update, context)
         return
 
     await update.message.reply_text(
@@ -389,35 +378,34 @@ def webhook():
     global telegram_app
 
     if telegram_app is None:
-        logger.error("telegram_app is not initialized")
-        return "Telegram app not initialized", 500
+        logger.error("telegram_app не ініціалізований")
+        return "telegram_app not initialized", 500
 
     try:
         data = request.get_json(force=True)
 
-        async def process():
+        async def process_update():
             update = Update.de_json(data, telegram_app.bot)
             await telegram_app.process_update(update)
 
-        asyncio.run(process())
+        asyncio.run(process_update())
         return "ok", 200
 
     except Exception as e:
-        logger.exception("Помилка у webhook: %s", e)
-        return f"Webhook error: {e}", 500
+        logger.exception("Помилка webhook: %s", e)
+        return f"error: {e}", 500
 
 
 # =========================
-# Ініціалізація Telegram
+# Telegram setup
 # =========================
 async def setup_telegram():
     global telegram_app
 
-    token = os.getenv("TELEGRAM_BOT_TOKEN")
-    if not token:
-        raise ValueError("Не знайдено TELEGRAM_BOT_TOKEN у змінних середовища.")
+    if not TOKEN:
+        raise ValueError("Не знайдено TELEGRAM_BOT_TOKEN у змінних середовища Render.")
 
-    telegram_app = Application.builder().token(token).build()
+    telegram_app = Application.builder().token(TOKEN).build()
 
     conv_handler = ConversationHandler(
         entry_points=[
@@ -440,29 +428,13 @@ async def setup_telegram():
     )
 
     telegram_app.add_handler(conv_handler)
-
-    telegram_app.add_handler(
-        MessageHandler(filters.Regex("^📘 Детальніше про курс$"), send_course_details)
-    )
-    telegram_app.add_handler(
-        MessageHandler(filters.Regex("^👤 Для кого курс$"), send_for_whom)
-    )
-    telegram_app.add_handler(
-        MessageHandler(filters.Regex("^📝 Як записатися$"), send_signup)
-    )
-    telegram_app.add_handler(
-        MessageHandler(filters.Regex("^▶️ Старт$"), menu_start)
-    )
-    telegram_app.add_handler(
-        MessageHandler(filters.Regex("^🔄 Перерахувати ІМТ$"), menu_start)
-    )
     telegram_app.add_handler(
         MessageHandler(filters.TEXT & ~filters.COMMAND, fallback_menu)
     )
 
     await telegram_app.initialize()
     await telegram_app.start()
-    logger.info("Telegram app initialized successfully")
+    logger.info("Telegram app успішно ініціалізований")
 
 
 # =========================
