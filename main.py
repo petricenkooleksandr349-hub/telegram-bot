@@ -1,7 +1,6 @@
 import os
-from threading import Thread
-from flask import Flask
-
+import asyncio
+from flask import Flask, request
 from telegram import (
     Update,
     ReplyKeyboardMarkup,
@@ -9,7 +8,7 @@ from telegram import (
     InlineKeyboardMarkup,
 )
 from telegram.ext import (
-    ApplicationBuilder,
+    Application,
     CommandHandler,
     MessageHandler,
     ConversationHandler,
@@ -18,30 +17,12 @@ from telegram.ext import (
 )
 
 # =========================
-# Flask для Render
+# Flask для Render + webhook
 # =========================
 web_app = Flask(__name__)
 
+telegram_app: Application | None = None
 
-@web_app.route("/")
-def home():
-    return "Бот працює!"
-
-
-def run_web():
-    port = int(os.environ.get("PORT", 8080))
-    web_app.run(host="0.0.0.0", port=port)
-
-
-def keep_alive():
-    t = Thread(target=run_web)
-    t.daemon = True
-    t.start()
-
-
-# =========================
-# Налаштування бота
-# =========================
 HEIGHT, WEIGHT = range(2)
 
 CONTACT_URL = (
@@ -52,6 +33,7 @@ CONTACT_URL = (
 
 def main_keyboard() -> ReplyKeyboardMarkup:
     keyboard = [
+        ["▶️ Старт"],
         ["📘 Детальніше про курс"],
         ["👤 Для кого курс"],
         ["📝 Як записатися"],
@@ -108,15 +90,17 @@ def bmi_explanation(bmi: float) -> str:
 def detect_menu_action(text: str) -> str | None:
     lowered = text.strip().lower()
 
+    if "старт" in lowered or lowered == "/start":
+        return "restart"
     if "детальніше" in lowered and "курс" in lowered:
         return "course_details"
     if "для кого" in lowered:
         return "for_whom"
     if "як записатися" in lowered:
         return "signup"
-    if "перерахувати" in lowered or lowered == "/start":
+    if "перерахувати" in lowered:
         return "restart"
-    if lowered == "/cancel":
+    if lowered in ["/cancel", "скасувати", "❌ скасувати"]:
         return "cancel"
 
     return None
@@ -350,19 +334,19 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
 
 
-def main():
-    token = os.getenv("TELEGRAM_BOT_TOKEN")
+async def setup_telegram():
+    global telegram_app
 
+    token = os.getenv("TELEGRAM_BOT_TOKEN")
     if not token:
         raise ValueError("Не знайдено TELEGRAM_BOT_TOKEN у змінних середовища.")
 
-    keep_alive()
-
-    app = ApplicationBuilder().token(token).build()
+    telegram_app = Application.builder().token(token).build()
 
     conv_handler = ConversationHandler(
         entry_points=[
             CommandHandler("start", start),
+            MessageHandler(filters.Regex("^▶️ Старт$"), start),
             MessageHandler(filters.Regex("^🔄 Перерахувати ІМТ$"), start),
         ],
         states={
@@ -373,12 +357,37 @@ def main():
         allow_reentry=True,
     )
 
-    app.add_handler(conv_handler)
-    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_text))
+    telegram_app.add_handler(conv_handler)
+    telegram_app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_text))
 
-    print("Бот запущено...")
-    app.run_polling(drop_pending_updates=True)
+    await telegram_app.initialize()
+    await telegram_app.start()
+
+
+@web_app.route("/", methods=["GET"])
+def home():
+    return "Бот працює!"
+
+
+@web_app.route("/webhook", methods=["POST"])
+def webhook():
+    global telegram_app
+
+    if telegram_app is None:
+        return "Telegram app not initialized", 500
+
+    data = request.get_json(force=True)
+
+    async def process():
+        update = Update.de_json(data, telegram_app.bot)
+        await telegram_app.process_update(update)
+
+    asyncio.run(process())
+    return "ok", 200
 
 
 if __name__ == "__main__":
-    main()
+    asyncio.run(setup_telegram())
+
+    port = int(os.environ.get("PORT", 10000))
+    web_app.run(host="0.0.0.0", port=port)
