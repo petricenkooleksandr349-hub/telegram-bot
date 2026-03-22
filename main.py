@@ -18,7 +18,7 @@ from telegram.ext import (
 )
 
 # =========================
-# Flask для Replit
+# Flask для Render
 # =========================
 web_app = Flask(__name__)
 
@@ -50,6 +50,23 @@ CONTACT_URL = (
 )
 
 
+def main_keyboard() -> ReplyKeyboardMarkup:
+    keyboard = [
+        ["📘 Детальніше про курс"],
+        ["👤 Для кого курс"],
+        ["📝 Як записатися"],
+        ["🔄 Перерахувати ІМТ"],
+    ]
+    return ReplyKeyboardMarkup(keyboard, resize_keyboard=True)
+
+
+def contact_inline_keyboard() -> InlineKeyboardMarkup:
+    keyboard = [
+        [InlineKeyboardButton("✍️ Написати в особисті повідомлення", url=CONTACT_URL)]
+    ]
+    return InlineKeyboardMarkup(keyboard)
+
+
 def bmi_category(bmi: float) -> str:
     if bmi < 18.5:
         return "Недостатня маса тіла"
@@ -57,8 +74,7 @@ def bmi_category(bmi: float) -> str:
         return "Норма"
     elif bmi < 30:
         return "Надлишкова вага"
-    else:
-        return "Ожиріння"
+    return "Ожиріння"
 
 
 def bmi_explanation(bmi: float) -> str:
@@ -89,50 +105,137 @@ def bmi_explanation(bmi: float) -> str:
         )
 
 
-def main_keyboard() -> ReplyKeyboardMarkup:
-    keyboard = [
-        ["📘 Детальніше про курс"],
-        ["👤 Для кого курс"],
-        ["📝 Як записатися"],
-        ["🔄 Перерахувати ІМТ"],
-    ]
-    return ReplyKeyboardMarkup(keyboard, resize_keyboard=True)
+def detect_menu_action(text: str) -> str | None:
+    lowered = text.strip().lower()
+
+    if "детальніше" in lowered and "курс" in lowered:
+        return "course_details"
+    if "для кого" in lowered:
+        return "for_whom"
+    if "як записатися" in lowered:
+        return "signup"
+    if "перерахувати" in lowered or lowered == "/start":
+        return "restart"
+    if lowered == "/cancel":
+        return "cancel"
+
+    return None
 
 
-def contact_inline_keyboard() -> InlineKeyboardMarkup:
-    keyboard = [
-        [InlineKeyboardButton("✍️ Написати в особисті повідомлення", url=CONTACT_URL)]
-    ]
-    return InlineKeyboardMarkup(keyboard)
+async def send_course_details(update: Update):
+    await update.message.reply_text(
+        "📘 Курс «Усвідомлене харчування» — це не дієта і не марафон.\n\n"
+        "На курсі ми працюємо над тим, щоб:\n"
+        "— прибрати хаос у харчуванні\n"
+        "— зменшити тягу до переїдання\n"
+        "— перестати ділити їжу на «добру» і «погану»\n"
+        "— вибудувати спокійну систему, яку можна втримати в реальному житті\n\n"
+        "На курсі вас чекає:\n"
+        "— 6 тижнів навчання\n"
+        "— моя підтримка протягом усього курсу\n"
+        "— розбір тарілок з нутріціологом\n"
+        "— тренування від професійної тренерки Тетяни Баранової\n\n"
+        "Це підхід без жорстких обмежень, без постійного почуття провини і без зривів.",
+        reply_markup=main_keyboard(),
+    )
+
+
+async def send_for_whom(update: Update):
+    await update.message.reply_text(
+        "👤 Курс підійде тобі, якщо ти:\n\n"
+        "— постійно починаєш «нове життя» з понеділка\n"
+        "— зриваєшся після обмежень\n"
+        "— втомилась від дієт і контролю\n"
+        "— хочеш нормальні, спокійні відносини з їжею\n"
+        "— хочеш змінювати харчування без стресу\n\n"
+        "Це не про ідеальність.\n"
+        "Це про систему, яка працює довго.",
+        reply_markup=main_keyboard(),
+    )
+
+
+async def send_signup(update: Update):
+    await update.message.reply_text(
+        "Щоб записатися на курс «Усвідомлене харчування» 👇\n\n"
+        "Натисни кнопку нижче і напиши мені в Telegram 💛",
+        reply_markup=contact_inline_keyboard(),
+    )
+
+
+async def process_menu_action(
+    update: Update,
+    context: ContextTypes.DEFAULT_TYPE,
+    action: str,
+    stay_state: int | None = None,
+):
+    if action == "course_details":
+        await send_course_details(update)
+        return stay_state
+
+    if action == "for_whom":
+        await send_for_whom(update)
+        return stay_state
+
+    if action == "signup":
+        await send_signup(update)
+        return stay_state
+
+    if action == "restart":
+        return await start(update, context)
+
+    if action == "cancel":
+        return await cancel(update, context)
+
+    return stay_state
 
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    context.user_data.clear()
     await update.message.reply_text(
         "Привіт 👋\n\n"
         "Я допоможу розрахувати індекс маси тіла (ІМТ) "
         "і покажу, куди рухатись далі.\n\n"
         "Введи свій зріст у сантиметрах.\n"
-        "Наприклад: 165"
+        "Наприклад: 165",
+        reply_markup=main_keyboard(),
     )
     return HEIGHT
 
 
+async def cancel(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    context.user_data.clear()
+    await update.message.reply_text(
+        "Окей, повертаємось у меню 👇",
+        reply_markup=main_keyboard(),
+    )
+    return ConversationHandler.END
+
+
 async def get_height(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    text = update.message.text.replace(",", ".").strip()
+    raw_text = update.message.text.strip()
+
+    action = detect_menu_action(raw_text)
+    if action:
+        return await process_menu_action(update, context, action, stay_state=HEIGHT)
+
+    text = raw_text.replace(",", ".")
 
     try:
         height = float(text)
     except ValueError:
         await update.message.reply_text(
             "Будь ласка, введи зріст числом.\n"
-            "Наприклад: 165"
+            "Наприклад: 165\n\n"
+            "Або скористайся кнопками меню нижче.",
+            reply_markup=main_keyboard(),
         )
         return HEIGHT
 
     if height < 100 or height > 250:
         await update.message.reply_text(
             "Введи реальний зріст у сантиметрах.\n"
-            "Наприклад: 165"
+            "Наприклад: 165",
+            reply_markup=main_keyboard(),
         )
         return HEIGHT
 
@@ -141,27 +244,37 @@ async def get_height(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(
         f"Зріст зафіксовано: {height:.1f} см\n\n"
         "Тепер введи свою вагу в кілограмах.\n"
-        "Наприклад: 70"
+        "Наприклад: 70",
+        reply_markup=main_keyboard(),
     )
     return WEIGHT
 
 
 async def get_weight(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    text = update.message.text.replace(",", ".").strip()
+    raw_text = update.message.text.strip()
+
+    action = detect_menu_action(raw_text)
+    if action:
+        return await process_menu_action(update, context, action, stay_state=WEIGHT)
+
+    text = raw_text.replace(",", ".")
 
     try:
         weight = float(text)
     except ValueError:
         await update.message.reply_text(
             "Будь ласка, введи вагу числом.\n"
-            "Наприклад: 70"
+            "Наприклад: 70\n\n"
+            "Або скористайся кнопками меню нижче.",
+            reply_markup=main_keyboard(),
         )
         return WEIGHT
 
     if weight < 20 or weight > 300:
         await update.message.reply_text(
             "Введи реальну вагу в кілограмах.\n"
-            "Наприклад: 70"
+            "Наприклад: 70",
+            reply_markup=main_keyboard(),
         )
         return WEIGHT
 
@@ -201,68 +314,39 @@ async def get_weight(update: Update, context: ContextTypes.DEFAULT_TYPE):
 ✔ навчитися їсти спокійно, без страху і крайнощів
 """.strip()
 
+    context.user_data.clear()
+
     await update.message.reply_text(message, reply_markup=main_keyboard())
     await update.message.reply_text(
         "Обери, що тобі цікаво 👇",
-        reply_markup=main_keyboard()
+        reply_markup=main_keyboard(),
     )
 
-    return ConversationHandler.END
-
-
-async def cancel(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text(
-        "Розрахунок скасовано.\n"
-        "Щоб почати знову, натисни /start"
-    )
     return ConversationHandler.END
 
 
 async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    text = update.message.text.strip().lower()
+    action = detect_menu_action(update.message.text)
 
-    if "детальніше" in text and "курс" in text:
-        await update.message.reply_text(
-            "📘 Курс «Усвідомлене харчування» — це не дієта і не марафон.\n\n"
-            "На курсі ми працюємо над тим, щоб:\n"
-            "— прибрати хаос у харчуванні\n"
-            "— зменшити тягу до переїдання\n"
-            "— перестати ділити їжу на «добру» і «погану»\n"
-            "— вибудувати спокійну систему, яку можна втримати в реальному житті\n\n"
-            "На курсі вас чекає:\n"
-            "— 6 тижнів навчання\n"
-            "— моя підтримка протягом усього курсу\n"
-            "— розбір тарілок з нутріціологом\n"
-            "— тренування від професійної тренерки Тетяни Баранової\n\n"
-            "Це підхід без жорстких обмежень, без постійного почуття провини і без зривів."
-        )
+    if action == "course_details":
+        await send_course_details(update)
 
-    elif "для кого" in text:
-        await update.message.reply_text(
-            "👤 Курс підійде тобі, якщо ти:\n\n"
-            "— постійно починаєш «нове життя» з понеділка\n"
-            "— зриваєшся після обмежень\n"
-            "— втомилась від дієт і контролю\n"
-            "— хочеш нормальні, спокійні відносини з їжею\n"
-            "— хочеш змінювати харчування без стресу\n\n"
-            "Це не про ідеальність.\n"
-            "Це про систему, яка працює довго."
-        )
+    elif action == "for_whom":
+        await send_for_whom(update)
 
-    elif "як записатися" in text:
-        await update.message.reply_text(
-            "Щоб записатися на курс «Усвідомлене харчування» 👇\n\n"
-            "Натисни кнопку нижче і напиши мені в Telegram 💛",
-            reply_markup=contact_inline_keyboard()
-        )
+    elif action == "signup":
+        await send_signup(update)
 
-    elif "перерахувати" in text:
+    elif action == "restart":
         return await start(update, context)
+
+    elif action == "cancel":
+        return await cancel(update, context)
 
     else:
         await update.message.reply_text(
             "Обери потрібний пункт меню 👇",
-            reply_markup=main_keyboard()
+            reply_markup=main_keyboard(),
         )
 
 
@@ -270,11 +354,11 @@ def main():
     token = os.getenv("TELEGRAM_BOT_TOKEN")
 
     if not token:
-        raise ValueError("Не знайдено TELEGRAM_BOT_TOKEN у Secrets.")
+        raise ValueError("Не знайдено TELEGRAM_BOT_TOKEN у змінних середовища.")
 
     keep_alive()
 
-    tg_app = ApplicationBuilder().token(token).build()
+    app = ApplicationBuilder().token(token).build()
 
     conv_handler = ConversationHandler(
         entry_points=[
@@ -289,11 +373,11 @@ def main():
         allow_reentry=True,
     )
 
-    tg_app.add_handler(conv_handler)
-    tg_app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_text))
+    app.add_handler(conv_handler)
+    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_text))
 
     print("Бот запущено...")
-    tg_app.run_polling()
+    app.run_polling(drop_pending_updates=True)
 
 
 if __name__ == "__main__":
